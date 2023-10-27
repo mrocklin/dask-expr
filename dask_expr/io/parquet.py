@@ -22,7 +22,7 @@ from dask.delayed import delayed
 from dask.utils import apply, typename
 from fsspec.utils import stringify_path
 
-from dask_expr._expr import Blockwise, Expr, Index, Projection
+from dask_expr._expr import Blockwise, Expr, Index, PartitionsFiltered, Projection
 from dask_expr._util import _convert_to_list, _tokenize_deterministic
 from dask_expr.io import BlockwiseIO
 
@@ -367,7 +367,7 @@ def to_parquet(
     return out
 
 
-class ReadParquet(BlockwiseIO):
+class ReadParquet(PartitionsFiltered, BlockwiseIO):
     """Read a parquet dataset"""
 
     _absorb_projections = True
@@ -432,7 +432,7 @@ class ReadParquet(BlockwiseIO):
 
         return list(toolz.partition_all(files_per_partition, filenames))
 
-    def _task(self, i):
+    def _filtered_task(self, i):
         batch = self._filename_batches[i]
         return (
             ReadParquet.to_pandas,
