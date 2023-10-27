@@ -147,11 +147,11 @@ class FrameBase(DaskMethodsMixin):
             return new_collection(self.expr.__getitem__(other.expr))
         return new_collection(self.expr.__getitem__(other))
 
-    def persist(self, fuse=True, combine_similar=True, **kwargs):
+    def persist(self, fuse=False, combine_similar=True, **kwargs):
         out = self.optimize(combine_similar=combine_similar, fuse=fuse)
         return DaskMethodsMixin.persist(out, **kwargs)
 
-    def compute(self, fuse=True, combine_similar=True, **kwargs):
+    def compute(self, fuse=False, combine_similar=True, **kwargs):
         out = self.optimize(combine_similar=combine_similar, fuse=fuse)
         return DaskMethodsMixin.compute(out, **kwargs)
 
@@ -1124,7 +1124,7 @@ def new_collection(expr):
         return Scalar(expr)
 
 
-def optimize(collection, fuse=True):
+def optimize(collection, fuse=False):
     return new_collection(expr.optimize(collection.expr, fuse=fuse))
 
 
@@ -1171,47 +1171,33 @@ def read_csv(path, *args, usecols=None, **kwargs):
 def read_parquet(
     path=None,
     columns=None,
-    filters=None,
-    categories=None,
-    index=None,
-    storage_options=None,
-    dtype_backend=None,
-    calculate_divisions=False,
-    ignore_metadata_file=False,
-    metadata_task_size=None,
-    split_row_groups="infer",
-    blocksize="default",
-    aggregate_files=None,
-    parquet_file_extension=(".parq", ".parquet", ".pq"),
-    filesystem="fsspec",
-    engine=None,
-    **kwargs,
 ):
-    from dask_expr.io.parquet import ReadParquet, _set_parquet_engine
+    from dask_expr.io.parquet import ReadParquet
+
+    if path.startswith("s3://"):
+        import boto3
+        from pyarrow.fs import S3FileSystem
+
+        session = boto3.session.Session()
+        credentials = session.get_credentials()
+
+        filesystem = S3FileSystem(
+            secret_key=credentials.secret_key,
+            access_key=credentials.access_key,
+            region="us-east-2",  # TODO
+            session_token=credentials.token,
+        )
+    else:
+        filesystem = None
 
     if not isinstance(path, str):
         path = stringify_path(path)
-
-    kwargs["dtype_backend"] = dtype_backend
 
     return new_collection(
         ReadParquet(
             path,
             columns=_convert_to_list(columns),
-            filters=filters,
-            categories=categories,
-            index=index,
-            storage_options=storage_options,
-            calculate_divisions=calculate_divisions,
-            ignore_metadata_file=ignore_metadata_file,
-            metadata_task_size=metadata_task_size,
-            split_row_groups=split_row_groups,
-            blocksize=blocksize,
-            aggregate_files=aggregate_files,
-            parquet_file_extension=parquet_file_extension,
             filesystem=filesystem,
-            engine=_set_parquet_engine(engine),
-            kwargs=kwargs,
         )
     )
 

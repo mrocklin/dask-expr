@@ -35,6 +35,14 @@ def df_bc(fn):
     return read_parquet(fn, columns=["b", "c"])
 
 
+def dont_test_s3():
+    import dask
+
+    df = read_parquet("s3://coiled-data/uber")
+    with dask.config.set(scheduler="sync"):
+        df.head()
+
+
 @pytest.mark.parametrize(
     "input,expected",
     [
