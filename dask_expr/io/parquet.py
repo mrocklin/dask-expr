@@ -420,6 +420,8 @@ class ReadParquet(PartitionsFiltered, BlockwiseIO):
         meta, _ = meta_and_filenames(self.path)
         if self.operand("columns") is not None:
             meta = meta[self.operand("columns")]
+        if self._series:
+            meta = meta[meta.columns[0]]
         return meta
 
     @functools.cached_property
