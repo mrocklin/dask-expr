@@ -370,10 +370,11 @@ def to_parquet(
 class ReadParquet(BlockwiseIO):
     """Read a parquet dataset"""
 
+    _absorb_projections = True
+
     _parameters = [
         "path",
         "columns",
-        "filesystem",
         "_partitions",
         "_series",
     ]
@@ -386,9 +387,25 @@ class ReadParquet(BlockwiseIO):
 
     @functools.cached_property
     def _name(self):
-        ops = self.operands.copy()
-        ops.pop(self._parameters.index("filesystem"))  # TODO
-        return "read-parquet-" + _tokenize_deterministic(*ops)
+        return "read-parquet-" + _tokenize_deterministic(*self.operands)
+
+    @functools.cached_property
+    def filesystem(self):
+        if str(self.path).startswith("s3://"):
+            import boto3
+            from pyarrow.fs import S3FileSystem
+
+            session = boto3.session.Session()
+            credentials = session.get_credentials()
+
+            return S3FileSystem(
+                secret_key=credentials.secret_key,
+                access_key=credentials.access_key,
+                region="us-east-2",  # TODO
+                session_token=credentials.token,
+            )
+        else:
+            return None
 
     @property
     def columns(self):
@@ -405,30 +422,27 @@ class ReadParquet(BlockwiseIO):
             meta = meta[self.operand("columns")]
         return meta
 
-    def _layer(self):
+    @functools.cached_property
+    def _filename_batches(self):
         meta, filenames = meta_and_filenames(self.path)
         if not self.columns:
             files_per_partition = 1
         else:
             files_per_partition = int(round(len(meta.columns) / len(self.columns)))
 
-        batches = list(toolz.partition_all(files_per_partition, filenames))
-        graph = {
-            ("arrow-" + self._name, i): (
+        return list(toolz.partition_all(files_per_partition, filenames))
+
+    def _task(self, i):
+        batch = self._filename_batches[i]
+        return (
+            ReadParquet.to_pandas,
+            (
                 ReadParquet.read_partition,
                 batch,
                 self.columns,
                 self.filesystem,
-            )
-            for i, batch in enumerate(batches)
-        }
-        graph.update(
-            {
-                (self._name, i): (ReadParquet.to_pandas, ("arrow-" + self._name, i))
-                for i in range(len(batches))
-            }
+            ),
         )
-        return graph
 
     @staticmethod
     def to_pandas(t: pa.Table) -> pd.DataFrame:
@@ -437,7 +451,7 @@ class ReadParquet(BlockwiseIO):
                 return pd.StringDtype("pyarrow")
 
         df = t.to_pandas(
-            use_threads=True,
+            use_threads=False,
             ignore_metadata=False,
             types_mapper=types_mapper,
         )
@@ -471,7 +485,7 @@ class ReadParquet(BlockwiseIO):
             return self.substitute_parameters({"columns": [], "_series": False})
 
         if isinstance(parent, Projection):
-            return super()._simplify_up(parent)
+            return BlockwiseIO._simplify_up(self, parent)
 
         # if isinstance(parent, Lengths):
         #     _lengths = self._get_lengths()
@@ -493,8 +507,12 @@ def meta_and_filenames(path):
         filenames = s3.ls(path)
     else:
         import glob
+        import os
 
-        filenames = sorted(glob.glob(path))
+        if os.path.isdir(path):
+            filenames = sorted(glob.glob(os.path.join(path, "*")))
+        else:
+            filenames = [path]  # TODO: split by row group
 
     import dask.dataframe as dd
 

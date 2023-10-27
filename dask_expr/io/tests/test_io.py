@@ -312,13 +312,13 @@ def test_to_parquet(tmpdir, write_metadata_file):
 
     # Check basic parquet round trip
     df.to_parquet(tmpdir, write_metadata_file=write_metadata_file)
-    df2 = read_parquet(tmpdir, calculate_divisions=True)
+    df2 = read_parquet(tmpdir)
     assert_eq(df, df2)
 
     # Check overwrite behavior
     df["new"] = df["x"] + 1
     df.to_parquet(tmpdir, overwrite=True, write_metadata_file=write_metadata_file)
-    df2 = read_parquet(tmpdir, calculate_divisions=True)
+    df2 = read_parquet(tmpdir)
     assert_eq(df, df2)
 
     # Check that we cannot overwrite a path we are
