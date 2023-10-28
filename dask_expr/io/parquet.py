@@ -387,7 +387,7 @@ class ReadParquet(PartitionsFiltered, BlockwiseIO):
 
     @functools.cached_property
     def _name(self):
-        return "read-parquet-" + _tokenize_deterministic(*self.operands)
+        return "readparquet-" + _tokenize_deterministic(*self.operands)
 
     @functools.cached_property
     def filesystem(self):
