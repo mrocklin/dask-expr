@@ -451,6 +451,8 @@ class ReadParquet(PartitionsFiltered, BlockwiseIO):
         def types_mapper(pyarrow_dtype):
             if pyarrow_dtype == pa.string():
                 return pd.StringDtype("pyarrow")
+            if "decimal" in str(pyarrow_dtype) or "date32" in str(pyarrow_dtype):
+                return pd.ArrowDtype(pyarrow_dtype)
 
         df = t.to_pandas(
             use_threads=False,
@@ -461,7 +463,7 @@ class ReadParquet(PartitionsFiltered, BlockwiseIO):
 
     @staticmethod
     def read_partition(batch, columns, filesystem):
-        def f(fn):
+        def read_arrow_table(fn):
             t = pq.ParquetFile(fn, pre_buffer=True, filesystem=filesystem).read(
                 columns=columns,
                 use_threads=False,
@@ -470,10 +472,12 @@ class ReadParquet(PartitionsFiltered, BlockwiseIO):
             return t
 
         if len(batch) == 1:
-            return f(batch[0])
+            return read_arrow_table(batch[0])
+        if filesystem is None:  # local
+            return pa.concat_tables(list(map(read_arrow_table, batch)))
         else:
             with concurrent.futures.ThreadPoolExecutor(len(batch)) as e:
-                parts = list(e.map(f, batch))
+                parts = list(e.map(read_arrow_table, batch))
             return pa.concat_tables(parts)
 
     def _divisions(self):
