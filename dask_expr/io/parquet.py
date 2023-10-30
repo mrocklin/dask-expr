@@ -448,12 +448,6 @@ class ReadParquet(PartitionsFiltered, BlockwiseIO):
 
     @staticmethod
     def to_pandas(t: pa.Table) -> pd.DataFrame:
-        def types_mapper(pyarrow_dtype):
-            if pyarrow_dtype == pa.string():
-                return pd.StringDtype("pyarrow")
-            if "decimal" in str(pyarrow_dtype) or "date32" in str(pyarrow_dtype):
-                return pd.ArrowDtype(pyarrow_dtype)
-
         df = t.to_pandas(
             use_threads=False,
             ignore_metadata=False,
@@ -504,6 +498,13 @@ class ReadParquet(PartitionsFiltered, BlockwiseIO):
         #         return Literal(sum(_lengths))
 
 
+def types_mapper(pyarrow_dtype):
+    if pyarrow_dtype == pa.string():
+        return pd.StringDtype("pyarrow")
+    if "decimal" in str(pyarrow_dtype) or "date32" in str(pyarrow_dtype):
+        return pd.ArrowDtype(pyarrow_dtype)
+
+
 @functools.lru_cache
 def meta_and_filenames(path):
     if str(path).startswith("s3://"):
@@ -520,9 +521,10 @@ def meta_and_filenames(path):
         else:
             filenames = [path]  # TODO: split by row group
 
-    import dask.dataframe as dd
+    ds = pq.ParquetDataset(path)
+    t = pa.Table.from_pylist([], schema=ds.schema)
+    meta = t.to_pandas(types_mapper=types_mapper)
 
-    meta = dd.read_parquet(path)._meta
     return meta, filenames
 
 
